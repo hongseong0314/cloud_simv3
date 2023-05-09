@@ -13,8 +13,8 @@ from independent_job.utils.feature_function import features_extract_func, featur
 
 def trainer(cfg):
     algorithm = MatrixAlgorithm(cfg)
-    logpa_sum_list = torch.zeros(size=(1, 0)) 
-    rewards = torch.zeros(size=(1,0)) 
+    logpa_sum_list = torch.zeros(size=(1, 0)).to(cfg.device)
+    rewards = torch.zeros(size=(1,0)).to(cfg.device)
 
     algorithm.model.train()
     for i in tqdm(range(1000)):
@@ -25,7 +25,7 @@ def trainer(cfg):
 
         logpa_list = algorithm.logpa_list
         logpa_sum_list = torch.cat((logpa_sum_list, logpa_list.sum(dim=2)), dim=1)
-        rewards = torch.cat((rewards, torch.tensor([algorithm.reward])[..., None]), dim=1)
+        rewards = torch.cat((rewards, torch.tensor([algorithm.reward])[..., None].to(cfg.device)), dim=1)
 
         if (i+1) % 5 == 0:
             print(i)
@@ -34,8 +34,8 @@ def trainer(cfg):
             # reset
             algorithm.logpa_list = torch.zeros(size=(1, 1, 0))
             algorithm.reward = 0
-            logpa_sum_list = torch.zeros(size=(1, 0)) 
-            rewards = torch.zeros(size=(1,0)) 
+            logpa_sum_list = torch.zeros(size=(1, 0)).to(cfg.device)
+            rewards = torch.zeros(size=(1,0)).to(cfg.device)
             print(f"loss : {loss}")
             break 
 
