@@ -29,7 +29,7 @@ class MatrixAlgorithm(Algorithm):
 
         task_selected, logpa = \
                 self.model(machine_feature, task_feature, D_TM, machine_ninf_mask_plus_1, machine_pointer)
-        print(logpa)
+        # print(logpa)
         # print(f"pointer : {machine_pointer} task : {int(task_selected[0][0])}")
         
         self.logpa_list = torch.cat((self.logpa_list, logpa[:, :, None]), dim=2)
