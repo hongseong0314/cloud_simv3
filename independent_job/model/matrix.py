@@ -53,7 +53,7 @@ class MatrixAlgorithm(Algorithm):
         self.model.zero_grad()
         loss_mean.backward()
         self.optimizer.step()
-        return loss_mean.item()
+        return loss_mean.item(), advantage.mean().item()
     
     def model_save(self):
         torch.save(self.model.state_dict(), "p.pth")
