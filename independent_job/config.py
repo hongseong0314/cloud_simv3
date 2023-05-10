@@ -12,14 +12,14 @@ def base_config():
 def matrix_config():
     cfg = base_config()
     cfg.model_params = {
-                        'embedding_dim': 256,
-                        'sqrt_embedding_dim': 256**(1/2),
+                        'embedding_dim': 128,
+                        'sqrt_embedding_dim': 128**(1/2),
                         'encoder_layer_num': 3,
-                        'qkv_dim': 16,
+                        'qkv_dim': 8,
                         'sqrt_qkv_dim': 16**(1/2),
                         'head_num': 16,
                         'logit_clipping': 10,
-                        'ff_hidden_dim': 512,
+                        'ff_hidden_dim': 256,
                         'ms_hidden_dim': 16,
                         'ms_layer1_init': (1/2)**(1/2),
                         'ms_layer2_init': (1/16)**(1/2),

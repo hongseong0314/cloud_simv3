@@ -5,20 +5,16 @@ import sys
 
 sys.path.append('.') 
 from codes.machine import MachineConfig
-
 from independent_job.utils.csv_reader import CSVReader
 from independent_job.utils.feature_function import features_extract_func, features_normalize_func
 from independent_job.env import Cloudsim
 from independent_job.model.random import RandomAlgorithm
 from independent_job.config import base_config
-from independent_job.utils.feature_function import features_extract_func, features_normalize_func
 
 def trainer(cfg):
     algorithm = RandomAlgorithm()
-
     sim = Cloudsim(cfg)
     sim.setup()
-
     sim.env.process(sim.simulation(algorithm))
     sim.env.run() 
 
