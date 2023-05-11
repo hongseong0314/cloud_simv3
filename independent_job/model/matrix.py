@@ -22,6 +22,11 @@ class MatrixAlgorithm(Algorithm):
         task_feature = state.task_feature.to(self.device)
         D_TM = state.D_TM.to(self.device)
         ninf_mask = state.ninf_mask
+        
+        if (~torch.isinf(ninf_mask)).sum() == 0:
+            self.reward = -clock
+            return None, None
+
         machine_pointer = state.machine_pointer
         machine_ninf_mask = ninf_mask[:, [machine_pointer], :]
         machine_ninf_mask_plus_1 = torch.cat((torch.tensor([[[0]]]), \
@@ -29,9 +34,7 @@ class MatrixAlgorithm(Algorithm):
 
         task_selected, logpa = \
                 self.model(machine_feature, task_feature, D_TM, machine_ninf_mask_plus_1, machine_pointer)
-        # print(logpa)
-        # print(f"pointer : {machine_pointer} task : {int(task_selected[0][0])}")
-        
+     
         self.logpa_list = torch.cat((self.logpa_list, logpa[:, :, None]), dim=2)
         self.reward = -clock
         # for i, machine in enumerate(machines):
@@ -39,7 +42,7 @@ class MatrixAlgorithm(Algorithm):
 
         if int(task_selected[0][0]) == 0:
             # skip
-            return None, 0
+            return -999, 0
         
         else:
             task = ctypes.cast(full_tasks_map[int(task_selected[0][0])-1], ctypes.py_object).value #start_task_instance(machine)

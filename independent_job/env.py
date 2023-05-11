@@ -12,11 +12,8 @@ class State:
     machine_pointer : int = 0
     #--------------------------------------
     machine_feature: torch.Tensor = None
-
     task_feature: torch.Tensor = None
-
     D_TM: torch.Tensor = None
-
     ninf_mask: torch.Tensor = None
 
     
@@ -44,7 +41,9 @@ class Cloudsim(object):
         
         # machine feature 를 task 개수만큼 복사 
         self.TASK_IDX = torch.arange(self.machine_num)[:, None].expand(self.machine_num, self.task_max)
-        
+
+
+        self.skip_cnt_f = 0
     def setup(self):
         self.cluster.add_machines(self.machine_configs)
         self.done = False
@@ -52,23 +51,16 @@ class Cloudsim(object):
 
         self.trajectory = []
         self.arrived_job = []
-        # self.machine_pointer = 0
         
         # state
+        self.skip_cnt = 0
         self.step_state = State()
-
         self.machine_feature = torch.tensor([[m.cpu, m.memory] \
                                              for m in self.machine_configs], \
                                             dtype=torch.float32)[None, ...].expand(1, self.machine_num, self.nM)
         self.task_feature = torch.zeros(size=(1, self.task_max, self.nT), dtype=torch.float32)
         self.D_TM = torch.zeros(size=(1, self.task_max, self.machine_num))
-
-        # mask
-        # self.available_task = torch.zeros(size=(1, self.machine_num, self.task_max))
-        # self.available_machine = torch.zeros(size=(1, self.machine_num, self.task_max))
         self.ninf_mask = torch.full(size=(1, self.machine_num, self.task_max),fill_value=float('-inf'))
-
-        # self.state_update()
 
     def state_update(self):
         # machine feature update [B, M, Feature:2]
@@ -94,6 +86,7 @@ class Cloudsim(object):
         # self.step_state.task_feature = self.task_feature[:, :self.task_num[0], :].clone()
         # self.step_state.D_TM = self.D_TM[:, :self.task_num[0], :].clone()
         # self.step_state.ninf_mask = self.ninf_mask[:, :, :self.task_num[0]].clone()
+
         self.step_state.machine_feature = (self.machine_feature.clone() - \
                                            torch.tensor([0,0],dtype=torch.float32)) / \
                                             torch.tensor([64, 1],dtype=torch.float32)
@@ -106,15 +99,11 @@ class Cloudsim(object):
                                 torch.tensor([108.0],dtype=torch.float32)
         self.step_state.ninf_mask = self.ninf_mask[:, :, :self.task_num[0]].clone()
 
+
     def step(self, decision_maker):
         while True:
-            if self.env.now > 1000: #terminal Done
+            if self.env.now > 600: #terminal Done
                 break
-            
-            if not (self.task_feature[..., -1]).sum(dim=-1):
-                # print("finisied")
-                break
-            # self.feature()
             self.state_update()
             machine, task = decision_maker(self.cluster, 
                                            self.env.now,
@@ -122,25 +111,29 @@ class Cloudsim(object):
                                            self.step_state,
                                            )
             self.step_state.machine_pointer = (self.step_state.machine_pointer + 1) % self.machine_num
-            if machine is None or task is None:
+            parallel_machine_time_done = self.parallel_machine_time(machine, task)
+            if parallel_machine_time_done:
                 break
-            elif task == 0:
+            
+            # step decision
+            if task == 0:
+                self.skip_cnt += 1
                 continue
             else:
                 task.start_task_instance(machine)
                 # print(f"task {task.id} -> machine {machine.id - 5} assign, left : {task.waiting_task_instances_number}")
-                
                 # task instance update
                 self.task_feature[0, self.task2idx[task.task_index], -1] -= 1
-    
+
 
     def simulation(self, decision_maker):
         while not (self.done \
                and len(self.cluster.unfinished_jobs) == 0):
-            if self.env.now > 1000:
+            if self.env.now > 600:
                 break
             self.step(decision_maker)
             yield self.env.timeout(1)
+
 
     def arrived_job_check(self):
         for job_config in self.task_configs:
@@ -151,5 +144,18 @@ class Cloudsim(object):
                                    self.idx2task)
             # print('a task arrived at time %f' % self.env.now)
             self.cluster.add_job(job)
-            self.arrived_job.append([self.env.now, self.cluster.tasks_which_has_waiting_instance])
+            # self.arrived_job.append([self.env.now, self.cluster.tasks_which_has_waiting_instance])
         self.done = True
+
+    def parallel_machine_time(self, machine, task):
+        done = False
+        if machine is None or task is None:
+            done = True
+        if self.skip_cnt + 1 == self.machine_num:
+            self.skip_cnt = 0
+            self.skip_cnt_f += 1
+            done = True
+        if self.step_state.machine_pointer == 0:
+            # print("skip reset")
+            self.skip_cnt = 0
+        return done
