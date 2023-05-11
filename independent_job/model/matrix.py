@@ -24,7 +24,7 @@ class MatrixAlgorithm(Algorithm):
         ninf_mask = state.ninf_mask
         
         if (~torch.isinf(ninf_mask)).sum() == 0:
-            self.reward = -clock
+            self.reward = -clock 
             return None, None
 
         machine_pointer = state.machine_pointer

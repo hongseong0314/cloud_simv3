@@ -14,10 +14,16 @@ from independent_job.config import matrix_config
 from torch.utils.tensorboard import SummaryWriter
 
 def trainer(cfg):
+    pomo_machine_configs = []
+    for _ in range(3):
+        np.random.shuffle(cfg.machine_configs)
+        pomo_machine_configs.append(cfg.machine_configs)
+    cfg.pomo_machine_configs = pomo_machine_configs
+
     writer = SummaryWriter()
     algorithm = MatrixAlgorithm(cfg)
     algorithm.model.train()
-    with tqdm(range(100), unit="Run") as runing_bar:
+    with tqdm(range(50), unit="Run") as runing_bar:
         for i in runing_bar:
             loss, logpa, r, a, clock, skip = one_update(algorithm, cfg)
             runing_bar.set_postfix(loss=loss,
@@ -35,11 +41,15 @@ def one_update(algorithm, cfg):
     logpa_sum_list = torch.zeros(size=(1, 0)).to(cfg.device)
     rewards = torch.zeros(size=(1,0)).to(cfg.device)
     skip_cnt = []
-    for i in range(3):
+    clock_list = []
+    
+    for machine_configs in cfg.pomo_machine_configs:
+        cfg.machine_configs = machine_configs
         sim = Cloudsim(cfg)
         sim.setup()
         sim.env.process(sim.simulation(algorithm))
         sim.env.run()
+        clock_list.append(sim.env.now)
         skip_cnt.append(sim.skip_cnt_f)
         logpa_list = algorithm.logpa_list
         logpa_sum_list = torch.cat((logpa_sum_list, logpa_list.sum(dim=2)), dim=1)
@@ -51,11 +61,12 @@ def one_update(algorithm, cfg):
     algorithm.logpa_list = torch.zeros(size=(1, 1, 0)).to(cfg.device)
     algorithm.reward = 0.0
 
-    return loss, logpa_sum_list.detach().cpu().numpy().mean(), \
-    rewards.detach().cpu().numpy().mean(), \
-    advantage, \
-    sim.env.now, \
-    np.mean(skip_cnt)
+    return loss, \
+            logpa_sum_list.detach().cpu().numpy().mean(), \
+            rewards.detach().cpu().numpy().mean(), \
+            advantage, \
+            np.mean(clock_list), \
+            np.mean(skip_cnt)
 
 if __name__ == '__main__':
     cfg = matrix_config()
