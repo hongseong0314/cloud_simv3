@@ -42,8 +42,8 @@ class Cloudsim(object):
         # machine feature 를 task 개수만큼 복사 
         self.TASK_IDX = torch.arange(self.machine_num)[:, None].expand(self.machine_num, self.task_max)
 
-
         self.skip_cnt_f = 0
+        
     def setup(self):
         self.cluster.add_machines(self.machine_configs)
         self.done = False
@@ -89,7 +89,7 @@ class Cloudsim(object):
 
         self.step_state.machine_feature = (self.machine_feature.clone() - \
                                            torch.tensor([0,0],dtype=torch.float32)) / \
-                                            torch.tensor([64, 1],dtype=torch.float32)
+                                            torch.tensor([128, 1],dtype=torch.float32)
 
         self.step_state.task_feature = (self.task_feature[:, :self.task_num[0], :].clone() - 
                                         torch.tensor([0.65, 0.009, 74.0, 80.3],dtype=torch.float32)) / \

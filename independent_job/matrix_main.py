@@ -42,7 +42,7 @@ def one_update(algorithm, cfg):
     rewards = torch.zeros(size=(1,0)).to(cfg.device)
     skip_cnt = []
     clock_list = []
-    
+
     for machine_configs in cfg.pomo_machine_configs:
         cfg.machine_configs = machine_configs
         sim = Cloudsim(cfg)
@@ -72,7 +72,10 @@ if __name__ == '__main__':
     cfg = matrix_config()
     cfg.features_extract_func = features_extract_func
     cfg.features_normalize_func = features_normalize_func
-    cfg.machine_configs = [MachineConfig(64, 1, 1) for i in range(cfg.machines_number)]
+    # cfg.machine_configs = [MachineConfig(64, 1, 1) for i in range(cfg.machines_number)]
+    cfg.machine_configs = [MachineConfig(cpu, mem_disk, mem_disk) for cpu, mem_disk in zip([128, 64, 32, 16, 16],\
+                    [2, 1, 1, 0.5, 0.5])]
+    
     cfg.jobs_len = 2
     csv_reader = CSVReader(cfg.jobs_csv)
     cfg.task_configs = csv_reader.generate(0, cfg.jobs_len)
