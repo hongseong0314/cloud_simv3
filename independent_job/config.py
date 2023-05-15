@@ -39,3 +39,9 @@ def matrix_config():
                         }
                     }
     return cfg
+
+def fit_config():
+    cfg = base_config()
+    cfg.n_iter = 100
+    cfg.n_episode = 12
+    return cfg
