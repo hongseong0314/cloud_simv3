@@ -76,7 +76,7 @@ class MMatrixAlgorithm(Algorithm):
         machine_feature = state.machine_feature.to(self.device)
         task_feature = state.task_feature.to(self.device)
         D_TM = state.D_TM.to(self.device)
-        ninf_mask = state.ninf_mask
+        ninf_mask = state.ninf_mask.to(self.device)
         task_num = task_feature.size(1)
         if (~torch.isinf(ninf_mask)).sum() == 0:
             self.reward = -clock 
