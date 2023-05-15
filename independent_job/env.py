@@ -31,16 +31,9 @@ class Cloudsim(object):
         self.task2idx = {}
         self.idx2task = {}
         self.full_tasks_map = {}
-        self.task_max = 100
         self.machine_num = len(self.machine_configs)
         self.nT = 4
         self.nM = 2
-
-        # task feature를 machine 수만큼 복사
-        self.MACHINE_IDX = torch.arange(self.task_max)[None, :].expand(self.machine_num, self.task_max)
-        
-        # machine feature 를 task 개수만큼 복사 
-        self.TASK_IDX = torch.arange(self.machine_num)[:, None].expand(self.machine_num, self.task_max)
 
         self.skip_cnt_f = 0
         
@@ -58,27 +51,30 @@ class Cloudsim(object):
         self.machine_feature = torch.tensor([[m.cpu, m.memory] \
                                              for m in self.machine_configs], \
                                             dtype=torch.float32)[None, ...].expand(1, self.machine_num, self.nM)
-        self.task_feature = torch.zeros(size=(1, self.task_max, self.nT), dtype=torch.float32)
-        self.D_TM = torch.zeros(size=(1, self.task_max, self.machine_num))
-        self.ninf_mask = torch.full(size=(1, self.machine_num, self.task_max),fill_value=float('-inf'))
+        self.task_feature = torch.zeros(size=(1, 0, self.nT), dtype=torch.float32)
+        self.D_TM = torch.zeros(size=(1, self.task_num[0], self.machine_num))
+        self.ninf_mask = torch.full(size=(1, self.machine_num, self.task_num[0]),fill_value=float('-inf'))
 
     def state_update(self):
+        TASK_IDX = torch.arange(self.machine_num)[:, None].expand(self.machine_num, self.task_num[0])
+        MACHINE_IDX = torch.arange(self.task_num[0])[None, :].expand(self.machine_num, self.task_num[0])
+        
         # machine feature update [B, M, Feature:2]
         self.machine_feature = torch.tensor([[m.cpu, m.memory] \
                                                 for m in self.cluster.machines], \
                                             dtype=torch.float32)[None, ...].expand(1, self.machine_num, self.nM)
         # D_MT update [M, T]
-        self.D_TM = self.task_feature[None, ..., 2].expand(1, self.machine_num, self.task_max).transpose(2,1)
+        self.D_TM = self.task_feature[None, ..., 2].expand(1, self.machine_num, self.task_num[0]).transpose(2,1)
 
         ### mask_update
         ## available_task [B, T]
         available_task = ~(self.task_feature[..., -1] == 0)
         ## available_machine [B, M, T]
-        available_machine = (self.machine_feature[..., self.TASK_IDX, :] > \
-                                self.task_feature[..., self.MACHINE_IDX, :2]).all(dim=3)
+        available_machine = (self.machine_feature[:, TASK_IDX, :] >= \
+                             self.task_feature[:, MACHINE_IDX, :2]).all(dim=3)
 
-        task_enable = (available_task[..., self.MACHINE_IDX, ...] & available_machine)
-        self.ninf_mask = torch.full(size=(1, self.machine_num, self.task_max),fill_value=float('-inf'))
+        task_enable = (available_task[..., MACHINE_IDX, ...] & available_machine)
+        self.ninf_mask = torch.full(size=(1, self.machine_num, self.task_num[0]),fill_value=float('-inf'))
         self.ninf_mask[task_enable] = 0 
 
         # step_update
@@ -91,13 +87,13 @@ class Cloudsim(object):
                                            torch.tensor([0,0],dtype=torch.float32)) / \
                                             torch.tensor([128, 1],dtype=torch.float32)
 
-        self.step_state.task_feature = (self.task_feature[:, :self.task_num[0], :].clone() - 
+        self.step_state.task_feature = (self.task_feature.clone() - 
                                         torch.tensor([0.65, 0.009, 74.0, 80.3],dtype=torch.float32)) / \
                                         torch.tensor([0.23, 0.005, 108.0, 643.5],dtype=torch.float32)
-        self.step_state.D_TM = (self.D_TM[:, :self.task_num[0], :].clone() - 
+        self.step_state.D_TM = (self.D_TM.clone() - 
                                 torch.tensor([74.0],dtype=torch.float32)) / \
                                 torch.tensor([108.0],dtype=torch.float32)
-        self.step_state.ninf_mask = self.ninf_mask[:, :, :self.task_num[0]].clone()
+        self.step_state.ninf_mask = self.ninf_mask.clone()
 
 
     def step(self, decision_maker):
@@ -139,9 +135,7 @@ class Cloudsim(object):
         for job_config in self.task_configs:
             assert job_config.submit_time >= self.env.now
             yield self.env.timeout(job_config.submit_time - self.env.now)
-            job = Cloudsim.job_cls(self.env, job_config, self.task2idx, 
-                                   self.task_num, self.task_feature, self.full_tasks_map,
-                                   self.idx2task)
+            job = Cloudsim.job_cls(self.env, job_config, self)
             # print('a task arrived at time %f' % self.env.now)
             self.cluster.add_job(job)
             # self.arrived_job.append([self.env.now, self.cluster.tasks_which_has_waiting_instance])
