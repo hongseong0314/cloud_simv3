@@ -136,24 +136,25 @@ class Task(object):
 class Job(object):
     task_cls = Task
 
-    def __init__(self, env, job_config, task2idx, task_num, 
-                 task_feature, full_tasks_map, idx2task):
+    def __init__(self, env, job_config, sim,):
         self.env = env
         self.job_config = job_config
         self.id = job_config.id
 
         self.tasks_map = {}
         for task_config in job_config.task_configs:
-            task_idx = copy.deepcopy(task_num[0])
+            task_idx = copy.deepcopy(sim.task_num[0])
             task_index = task_config.task_index
             self.tasks_map[task_index] = Job.task_cls(env, self, task_config)
-            full_tasks_map[task_idx] = id(self.tasks_map[task_index])
-            task2idx[task_config.task_index] = task_idx
-            task_feature[0, task_idx, ...] = torch.tensor([task_config.cpu,
-                                                            task_config.memory,
-                                                            task_config.duration,
-                                                            task_config.instances_number])
-            task_num[0] += 1
+            
+            sim.full_tasks_map[task_idx] = id(self.tasks_map[task_index])
+            sim.task2idx[task_config.task_index] = task_idx
+            sim.task_feature = torch.cat([sim.task_feature, \
+                                      torch.tensor([[[task_config.cpu,
+                                                    task_config.memory,
+                                                    task_config.duration,
+                                                    task_config.instances_number]]], dtype=torch.float32)],dim=1)
+            sim.task_num[0] += 1
 
     @property
     def tasks(self):
@@ -266,9 +267,6 @@ class TaskInstance(object):
         return str(self.task.id) + '-' + str(self.task_instance_index)
 
     def do_work(self):
-        # self.cluster.waiting_tasks.remove(self)
-        # self.cluster.running_tasks.append(self)
-        # self.machine.run(self)
         yield self.env.timeout(self.duration)
 
         self.finished = True

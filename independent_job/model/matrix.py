@@ -13,6 +13,7 @@ class MatrixAlgorithm(Algorithm):
         self.optimizer = Optimizer(self.model.parameters(), **cfg.optimizer_params['optimizer'])
         self.logpa_list = torch.zeros(size=(1, 1, 0)).to(self.device)
         self.reward = 0.0
+        self.skip_value = 0. if cfg.skip else float('-inf')
     
     def __call__(self, cluster, clock, full_tasks_map, state):
         machines = cluster.machines
@@ -26,10 +27,9 @@ class MatrixAlgorithm(Algorithm):
         if (~torch.isinf(ninf_mask)).sum() == 0:
             self.reward = -clock 
             return None, None
-
         machine_pointer = state.machine_pointer
         machine_ninf_mask = ninf_mask[:, [machine_pointer], :]
-        machine_ninf_mask_plus_1 = torch.cat((torch.tensor([[[0]]]), \
+        machine_ninf_mask_plus_1 = torch.cat((torch.tensor([[[self.skip_value]]]), \
                                               machine_ninf_mask), dim=-1).to(self.device)
 
         task_selected, logpa = \

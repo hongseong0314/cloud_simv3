@@ -14,16 +14,10 @@ from independent_job.config import matrix_config
 from torch.utils.tensorboard import SummaryWriter
 
 def trainer(cfg):
-    pomo_machine_configs = []
-    for _ in range(3):
-        np.random.shuffle(cfg.machine_configs)
-        pomo_machine_configs.append(cfg.machine_configs)
-    cfg.pomo_machine_configs = pomo_machine_configs
-
     writer = SummaryWriter()
     algorithm = MatrixAlgorithm(cfg)
     algorithm.model.train()
-    with tqdm(range(50), unit="Run") as runing_bar:
+    with tqdm(range(100), unit="Run") as runing_bar:
         for i in runing_bar:
             loss, logpa, r, a, clock, skip = one_update(algorithm, cfg)
             runing_bar.set_postfix(loss=loss,
@@ -42,8 +36,12 @@ def one_update(algorithm, cfg):
     rewards = torch.zeros(size=(1,0)).to(cfg.device)
     skip_cnt = []
     clock_list = []
+    pomo_machine_configs = []
+    for _ in range(3):
+        np.random.shuffle(cfg.machine_configs_init)
+        pomo_machine_configs.append(cfg.machine_configs_init)
 
-    for machine_configs in cfg.pomo_machine_configs:
+    for machine_configs in pomo_machine_configs:
         cfg.machine_configs = machine_configs
         sim = Cloudsim(cfg)
         sim.setup()
@@ -73,13 +71,14 @@ if __name__ == '__main__':
     cfg.features_extract_func = features_extract_func
     cfg.features_normalize_func = features_normalize_func
     # cfg.machine_configs = [MachineConfig(64, 1, 1) for i in range(cfg.machines_number)]
-    cfg.machine_configs = [MachineConfig(cpu, mem_disk, mem_disk) for cpu, mem_disk in zip([128, 64, 32, 16, 16],\
+    cfg.machine_configs_init = [MachineConfig(cpu, mem_disk, mem_disk) for cpu, mem_disk in zip([128, 64, 32, 16, 16],\
                     [2, 1, 1, 0.5, 0.5])]
     
     cfg.jobs_len = 2
     csv_reader = CSVReader(cfg.jobs_csv)
     cfg.task_configs = csv_reader.generate(0, cfg.jobs_len)
     cfg.device = torch.device('cuda') if torch.cuda.is_available() else "cpu"
+    cfg.skip = True
     st = time.time()
     trainer(cfg)
     print(time.time() - st)
