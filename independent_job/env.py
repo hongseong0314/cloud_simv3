@@ -34,6 +34,8 @@ class Cloudsim(object):
         self.machine_num = len(self.machine_configs)
         self.nT = 4
         self.nM = 2
+        self.cpus_max = cfg.cpus_max
+        self.mems_max = cfg.mems_max
 
         self.skip_cnt_f = 0
         
@@ -85,7 +87,7 @@ class Cloudsim(object):
 
         self.step_state.machine_feature = (self.machine_feature.clone() - \
                                            torch.tensor([0,0],dtype=torch.float32)) / \
-                                            torch.tensor([128, 1],dtype=torch.float32)
+                                            torch.tensor([self.cpus_max, self.mems_max],dtype=torch.float32)
 
         self.step_state.task_feature = (self.task_feature.clone() - 
                                         torch.tensor([0.65, 0.009, 74.0, 80.3],dtype=torch.float32)) / \
@@ -112,14 +114,14 @@ class Cloudsim(object):
                 break
             
             # step decision
-            if task == 0:
-                self.skip_cnt += 1
-                continue
-            else:
-                task.start_task_instance(machine)
-                # print(f"task {task.id} -> machine {machine.id - 5} assign, left : {task.waiting_task_instances_number}")
-                # task instance update
-                self.task_feature[0, self.task2idx[task.task_index], -1] -= 1
+            # if task == 0:
+            #     self.skip_cnt += 1
+            #     continue
+            # else:
+            task.start_task_instance(machine)
+            # print(f"task {task.id} -> machine {machine.id - 5} assign, left : {task.waiting_task_instances_number}")
+            # task instance update
+            self.task_feature[0, self.task2idx[task.task_index], -1] -= 1
 
 
     def simulation(self, decision_maker):
