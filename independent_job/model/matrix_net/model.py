@@ -3,6 +3,11 @@ import torch.nn as nn
 import torch.nn.functional as F
 from independent_job.model.matrix_net.sub_model import *
 
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from independent_job.model.matrix_net.sub_model import *
+
 class CloudMatrixModel(nn.Module):
     def __init__(self, **model_params):
         super().__init__()
@@ -44,8 +49,8 @@ class CloudMatrixModel(nn.Module):
             # [B, 1]
             logpa = dist.log_prob(task_selected)
             # [B, 1]
-        else:
-            task_selected = probs.argmax(dim=2)
+        else:  
+            task_selected = probs.argmax(dim=1)
             logpa = None
 
         return task_selected, logpa
