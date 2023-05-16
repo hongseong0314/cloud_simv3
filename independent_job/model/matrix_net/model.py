@@ -45,7 +45,7 @@ class CloudMatrixModel(nn.Module):
             logpa = dist.log_prob(task_selected)
             # [B, 1]
         else:
-            task_selected = all_job_probs.argmax(dim=2)
+            task_selected = probs.argmax(dim=2)
             logpa = None
 
         return task_selected, logpa
