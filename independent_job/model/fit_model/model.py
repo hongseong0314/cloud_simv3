@@ -141,5 +141,3 @@ class Agent(object):
                 policy_gradient.backward()
                 self.optimizer.step()
         return np.mean(loss_values), np.mean(advantages__)
-        # print('loss', np.mean(loss_values))
-        # print('adv', np.mean(advantages__))
