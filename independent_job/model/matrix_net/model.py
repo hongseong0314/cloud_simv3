@@ -3,11 +3,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 from independent_job.model.matrix_net.sub_model import *
 
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-from independent_job.model.matrix_net.sub_model import *
-
 class CloudMatrixModel(nn.Module):
     def __init__(self, **model_params):
         super().__init__()

@@ -81,9 +81,9 @@ class Cloudsim(object):
 
         # step_update
         # self.step_state.machine_feature = self.machine_feature.clone()
-        # self.step_state.task_feature = self.task_feature[:, :self.task_num[0], :].clone()
-        # self.step_state.D_TM = self.D_TM[:, :self.task_num[0], :].clone()
-        # self.step_state.ninf_mask = self.ninf_mask[:, :, :self.task_num[0]].clone()
+        # self.step_state.task_feature = self.task_feature.clone()
+        # self.step_state.D_TM = self.D_TM.clone()
+        # self.step_state.ninf_mask = self.ninf_mask.clone()
 
         self.step_state.machine_feature = (self.machine_feature.clone() - \
                                            torch.tensor([0,0],dtype=torch.float32)) / \
@@ -100,8 +100,8 @@ class Cloudsim(object):
 
     def step(self, decision_maker):
         while True:
-            if self.env.now > 600: #terminal Done
-                break
+            # if self.env.now > 600: #terminal Done
+            #     break
             self.state_update()
             machine, task = decision_maker(self.cluster, 
                                            self.env.now,
@@ -127,8 +127,8 @@ class Cloudsim(object):
     def simulation(self, decision_maker):
         while not (self.done \
                and len(self.cluster.unfinished_jobs) == 0):
-            if self.env.now > 600:
-                break
+            # if self.env.now > 600:
+            #     break
             self.step(decision_maker)
             yield self.env.timeout(1)
 

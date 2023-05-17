@@ -71,7 +71,6 @@ class MMatrixAlgorithm(Algorithm):
     
     def __call__(self, cluster, clock, full_tasks_map, state):
         machines = cluster.machines
-        # tasks = cluster.tasks_which_has_waiting_instance
 
         machine_feature = state.machine_feature.to(self.device)
         task_feature = state.task_feature.to(self.device)
@@ -87,12 +86,10 @@ class MMatrixAlgorithm(Algorithm):
      
         self.logpa_list = torch.cat((self.logpa_list, logpa[:, :, None]), dim=2)
         self.reward = -clock
-        # for i, machine in enumerate(machines):
-        #     print(f"machine num {i} : {len(machine.running_task_instances)}, time : {clock}")
         
         machine_pointer = task_selected[0][0] // task_num
         task_pointer = task_selected[0][0] % task_num
-        task = ctypes.cast(full_tasks_map[int(task_pointer)], ctypes.py_object).value #start_task_instance(machine)
+        task = ctypes.cast(full_tasks_map[int(task_pointer)], ctypes.py_object).value 
         return machines[machine_pointer], task
 
     def update_loss(self, logpas, rewards):
@@ -103,7 +100,7 @@ class MMatrixAlgorithm(Algorithm):
         self.model.zero_grad()
         loss_mean.backward()
         self.optimizer.step()
-        return loss_mean.item(), advantage.mean().item()
+        return loss_mean.item(), advantage.abs().mean().item()
     
     def model_save(self):
         torch.save(self.model.state_dict(), "p.pth")
