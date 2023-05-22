@@ -14,13 +14,15 @@ class AddAndInstanceNormalization(nn.Module):
         added = input1 + input2
         # shape:  (B, T, embedding)
 
-        transposed = added.transpose(1, 2)
-        # shape:  (B, T, embedding)
+        if added.size(1) == 1:
+            back_trans = added
+        else:
+            transposed = added.transpose(1, 2)
+            # shape:  (B, embedding, T)
+            normalized = self.norm(transposed)
 
-        normalized = self.norm(transposed)
-
-        back_trans = normalized.transpose(1, 2)
-        # shape:  (B, T, embedding)
+            back_trans = normalized.transpose(1, 2)
+            # shape:  (B, T, embedding)
 
         return back_trans
 
