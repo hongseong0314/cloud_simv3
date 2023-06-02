@@ -49,7 +49,7 @@ class CloudMatrixModel(nn.Module):
             logpa = None
 
         return task_selected, logpa
-
+        
 
 class OneStageModel(nn.Module):
     def __init__(self, **model_params):
@@ -112,9 +112,9 @@ class Matrix_Encoder(nn.Module):
         self.layers = nn.ModuleList([EncoderLayer(**model_params) for _ in range(encoder_layer_num)])
 
     def forward(self, row_emb, col_emb, cost_mat):
-        # col_emb.shape: (batch, col_cnt, embedding)
-        # row_emb.shape: (batch, row_cnt, embedding)
-        # cost_mat.shape: (batch, row_cnt, col_cnt)
+        # col_emb.shape: (B, T, embedding)
+        # row_emb.shape: (B, M, embedding)
+        # cost_mat.shape: (B, T, M)
 
         for layer in self.layers:
             row_emb, col_emb = layer(row_emb, col_emb, cost_mat)
@@ -124,7 +124,10 @@ class Matrix_Encoder(nn.Module):
 class EncoderLayer(nn.Module):
     def __init__(self, **model_params):
         super().__init__()
-        self.row_encoding_block = EncodingBlock(**model_params)
+        if model_params['MHA'] == 'depth':
+            self.row_encoding_block = EncodingBlock2(**model_params)
+        else:
+            self.row_encoding_block = EncodingBlock(**model_params)
         self.col_encoding_block = EncodingBlock(**model_params)
 
     def forward(self, row_emb, col_emb, cost_mat):
@@ -147,6 +150,7 @@ class EncodingBlock(nn.Module):
         self.Wq = nn.Linear(embedding_dim, head_num * qkv_dim, bias=False)
         self.Wk = nn.Linear(embedding_dim, head_num * qkv_dim, bias=False)
         self.Wv = nn.Linear(embedding_dim, head_num * qkv_dim, bias=False)
+
         self.mixed_score_MHA = MixedScore_MultiHeadAttention(**model_params)
         self.multi_head_combine = nn.Linear(head_num * qkv_dim, embedding_dim)
 
@@ -155,9 +159,51 @@ class EncodingBlock(nn.Module):
         self.add_n_normalization_2 = AddAndInstanceNormalization(**model_params)
 
     def forward(self, row_emb, col_emb, cost_mat):
-        # NOTE: row and col can be exchanged, if cost_mat.transpose(1,2) is used
-        # input1.shape: (batch, row_cnt:T, embedding)
-        # input2.shape: (batch, col_cnt:M, embedding)
+        # input1.shape: (batch, row_cnt:TorM, embedding)
+        # input2.shape: (batch, col_cnt:MorT, embedding)
+        # cost_mat.shape: (batch, row_cnt, col_cnt)
+        head_num = self.model_params['head_num']
+
+        q = reshape_by_heads(self.Wq(row_emb), head_num=head_num)
+        # q shape: (batch, head_num, row_cnt, qkv_dim)
+        k = reshape_by_heads(self.Wk(col_emb), head_num=head_num)
+        v = reshape_by_heads(self.Wv(col_emb), head_num=head_num)
+        # kv shape: (batch, head_num, col_cnt, qkv_dim)
+
+        out_concat = self.mixed_score_MHA(q, k, v, cost_mat)
+        # shape: (B, T, head_num*qkv_dim)
+
+        multi_head_out = self.multi_head_combine(out_concat)
+        # shape: (B, T, embedding)
+
+        out1 = self.add_n_normalization_1(row_emb, multi_head_out)
+        out2 = self.feed_forward(out1)
+        out3 = self.add_n_normalization_2(out1, out2)
+
+        return out3
+        # shape: (B, T, embedding)
+
+class EncodingBlock2(nn.Module):
+    def __init__(self, **model_params):
+        super().__init__()
+        self.model_params = model_params
+        embedding_dim = self.model_params['embedding_dim']
+        head_num = self.model_params['head_num']
+        qkv_dim = self.model_params['qkv_dim']
+
+        self.Wq = nn.Linear(embedding_dim, head_num * qkv_dim, bias=False)
+        self.Wk = nn.Linear(embedding_dim, head_num * qkv_dim, bias=False)
+        self.Wv = nn.Linear(embedding_dim, head_num * qkv_dim, bias=False)
+        self.mixed_score_MHA = Depth_MultiHeadAttention(**model_params)
+        self.multi_head_combine = nn.Linear(head_num * qkv_dim, embedding_dim)
+
+        self.add_n_normalization_1 = AddAndInstanceNormalization(**model_params)
+        self.feed_forward = FeedForward(**model_params)
+        self.add_n_normalization_2 = AddAndInstanceNormalization(**model_params)
+
+    def forward(self, row_emb, col_emb, cost_mat):
+        # input1.shape: (batch, row_cnt:TorM, embedding)
+        # input2.shape: (batch, col_cnt:MorT, embedding)
         # cost_mat.shape: (batch, row_cnt, col_cnt)
         head_num = self.model_params['head_num']
 

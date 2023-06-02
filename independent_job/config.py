@@ -27,6 +27,10 @@ def matrix_config():
                         'one_hot_seed_cnt': 4,  
                         'nT':4,
                         'nM':2,
+
+                        'depth_hidden_dim':8,
+                        'depth__init':(1/2)**(1/2),
+                        'FC_init':(1/16)**(1/2),
                     }
     cfg.optimizer_params = {
                         'optimizer': {
