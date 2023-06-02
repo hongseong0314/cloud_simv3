@@ -41,6 +41,85 @@ class FeedForward(nn.Module):
 
         return self.W2(F.relu(self.W1(input1)))
 
+class Depth_MultiHeadAttention(nn.Module):
+    def __init__(self, **model_params):
+        super().__init__()
+        self.model_params = model_params
+
+        head_num = model_params['head_num']
+        depth_hidden_dim = model_params['depth_hidden_dim']
+        depth_init = model_params['depth__init']
+        FC_init = model_params['FC_init']
+
+        Wq = torch.torch.distributions.Uniform(low=-depth_init, high=depth_init).sample((head_num, 2, depth_hidden_dim))
+        Wk = torch.torch.distributions.Uniform(low=-depth_init, high=depth_init).sample((head_num, 2, depth_hidden_dim))
+        Wv = torch.torch.distributions.Uniform(low=-depth_init, high=depth_init).sample((head_num, 2, depth_hidden_dim))
+        self.Wq = nn.Parameter(Wq)
+        self.Wk = nn.Parameter(Wk)
+        self.Wv = nn.Parameter(Wq)
+        # shape: (head, 2, depth_hidden)
+
+        FC_weight = torch.torch.distributions.Uniform(low=-FC_init, high=FC_init).sample((head_num, depth_hidden_dim, 1))
+        FC_bias = torch.torch.distributions.Uniform(low=-FC_init, high=FC_init).sample((head_num, 1))
+        self.FC_weight = nn.Parameter(FC_weight)
+        # shape: (head, ms_hidden, 1)
+        self.FC_bias = nn.Parameter(FC_bias)
+        # shape: (head, 1)
+
+    def forward(self, q, k, v, D_TM):
+        # q shape: (B, H, T, qkv_dim)
+        # k,v shape: (B, H, M, qkv_dim)
+        # D_TM.shape: (B, T, M)
+        batch_size = q.size(0)
+        T_cnt = q.size(2)
+        M_cnt = k.size(2)
+
+        head_num = self.model_params['head_num']
+        qkv_dim = self.model_params['qkv_dim']
+        sqrt_qkv_dim = self.model_params['sqrt_qkv_dim']
+
+        dot_product = torch.matmul(q, k.transpose(2, 3))
+        dot_product_score = dot_product / sqrt_qkv_dim
+       
+        D_TM = D_TM[:, None, :, :].expand(batch_size, head_num, T_cnt, M_cnt)
+        # [B, H, T, M]
+        
+        a_e_feature  = torch.stack((dot_product_score, D_TM), dim=4)
+        # [B, H, T, M, 2]
+        a_e_feature_transposed = a_e_feature.transpose(1,2)
+        # [B, T, H, M, 2]
+        
+        depth_q = torch.matmul(a_e_feature_transposed, self.Wq)
+        depth_k = torch.matmul(a_e_feature_transposed, self.Wk)
+        depth_v = torch.matmul(a_e_feature_transposed, self.Wv)
+        # [B, T, H, M, depth_dim]
+
+        depth_dot_product = torch.matmul(depth_q, depth_k.transpose(3, 4))
+        depth_dot_product = depth_dot_product / sqrt_qkv_dim
+        # [B ,T, H, M, M]
+
+        depth_weights = nn.Softmax(dim=4)(depth_dot_product)
+        ae_score = torch.matmul(depth_weights, depth_v)
+        # [B, T, H, M, depth_dim] 
+
+        fc_out = torch.matmul(ae_score, self.FC_weight)
+        fc_out = fc_out + self.FC_bias[None, None, :, None, :]
+        depth_scores = fc_out.transpose(1,2)
+        # [B, H, T, M, 1]
+        depth_scores = depth_scores.squeeze(-1)
+        # [B, H, T, M]
+
+        weights = nn.Softmax(dim=3)(depth_scores)
+        # [B, H, T, M]
+        
+        out = torch.matmul(weights, v)
+        # [B, H, T, qkv_dim]
+        out_transposed = out.transpose(1, 2)
+        # [B, T, H, qkv_dim]
+        out_concat = out_transposed.reshape(batch_size, T_cnt, head_num * qkv_dim)
+        # [B, T, head*qkv_dim]
+        
+        return out_concat
 
 class MixedScore_MultiHeadAttention(nn.Module):
     def __init__(self, **model_params):
