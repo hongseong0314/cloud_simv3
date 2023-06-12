@@ -41,7 +41,7 @@ class FeedForward(nn.Module):
 
         return self.W2(F.relu(self.W1(input1)))
 
-class Depth_MultiHeadAttention(nn.Module):
+class Depth_MultiHeadAttention(nn.Module): 
     def __init__(self, **model_params):
         super().__init__()
         self.model_params = model_params
