@@ -107,7 +107,7 @@ class Depth_MultiHeadAttention(nn.Module):
         depth_scores = fc_out.transpose(1,2)
         # [B, H, T, M, 1]
         depth_scores = depth_scores.squeeze(-1)
-        # [B, H, T, M]
+        # [B, H, T, M]n 
 
         weights = nn.Softmax(dim=3)(depth_scores)
         # [B, H, T, M]
@@ -196,3 +196,23 @@ class MixedScore_MultiHeadAttention(nn.Module):
         # [B, T, head*qkv_dim]
         
         return out_concat
+
+class PositionalEncoding(nn.Module):
+    def __init__(self, d_model, device):
+        super(PositionalEncoding, self).__init__()
+        self.d_model = d_model
+        self.device = device
+    
+    def pre_set(self, task_num):
+        self.encoding = torch.zeros(1, task_num, self.d_model, device=self.device)
+        self.encoding.requires_grad = False 
+
+        pos = torch.arange(0, task_num, device =self.device)
+        pos = pos.float().unsqueeze(dim=1) 
+        _2i = torch.arange(0, self.d_model, step=2, device=self.device).float()
+
+        self.encoding[:, :, ::2] = torch.sin(pos / (10000 ** (_2i / self.d_model)))
+        self.encoding[:, :, 1::2] = torch.cos(pos / (10000 ** (_2i / self.d_model)))
+
+    def forward(self, available_task):
+        return self.encoding[:, available_task, :]

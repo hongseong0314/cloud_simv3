@@ -3,6 +3,219 @@ import torch.nn as nn
 import torch.nn.functional as F
 from independent_job.model.matrix_net.sub_model import *
 
+import numpy as np
+from torch.optim import Adam as Optimizer
+from torch.optim.lr_scheduler import MultiStepLR as Scheduler
+import copy
+
+class BGC():
+    def __init__(self, cfg):
+        self.device = cfg.device
+        self.gamma = 1.0
+        self.model = CloudMatrixModel2(**cfg.model_params).to(self.device)
+        self.optimizer = Optimizer(self.model.parameters(), **cfg.optimizer_params['optimizer'])
+        self.scheduler = Scheduler(self.optimizer, **cfg.optimizer_params['scheduler'])
+        self.normalize_advantages = True
+        self.save_path = cfg.model_params['save_path']
+
+        self.mode = True if cfg.model_params['eval_type'] == 'test' else False
+        if self.mode:
+            self.model.load_state_dict(torch.load(cfg.model_params['path'],
+                                                  map_location=self.device))
+            self.model.eval()
+
+        self.machine_list = []
+        self.task_list = []
+        self.D_TM_list = []
+        self.mask_list = []
+        self.action_list = []
+        self.reward_list = []
+        self.finishied_check = []
+
+        self.trajectory_m = []
+        self.trajectory_t = []
+        self.trajectory_d = []
+        self.trajectory_mask = []
+        self.trajectory_a = []
+        self.trajectory_adv = []
+        
+    
+    def model_save(self):
+        torch.save(self.model.state_dict(), self.save_path)
+
+    def decision(self, machine_feature, task_feature, D_TM, ninf_mask):
+        if self.mode:
+            with torch.no_grad():
+               probs = \
+                        self.model(machine_feature, task_feature, D_TM, ninf_mask)
+            task_selected = probs.argmax(dim=1)
+            logpa = None
+            return task_selected[0]
+            
+        else:
+            probs = \
+                    self.model(machine_feature, task_feature, D_TM, ninf_mask)
+            dist = torch.distributions.Categorical(probs)
+            task_selected = dist.sample().reshape(1, 1)
+            # [B, 1]
+            logpa = dist.log_prob(task_selected)
+            # [B, 1]
+            return task_selected[0][0]
+
+    def save_trajectory(self, M, T, D, mask, a, r, check):
+        self.machine_list.append(M)
+        self.task_list.append(T)
+        self.D_TM_list.append(D)
+        self.mask_list.append(mask)
+        self.action_list.append(a)
+        self.reward_list.append(r)
+        self.finishied_check.append(check)
+
+    def save_trajectorys(self):
+        self.trajectory_m.append(self.machine_list)
+        self.trajectory_t.append(self.task_list)
+        self.trajectory_d.append(self.D_TM_list)
+        self.trajectory_mask.append(self.mask_list)
+        self.trajectory_a.append(self.action_list)
+        self.trajectory_adv.append(self.compute_G_t(self.reward_list)[self.finishied_check])
+
+        self.machine_list = []
+        self.task_list = []
+        self.D_TM_list = []
+        self.mask_list = []
+        self.action_list = []
+        self.reward_list = []
+        self.finishied_check = []
+
+    def compute_G_t(self, rewards):
+        T = len(rewards)
+        discounts = np.logspace(0, T, num=T, base=self.gamma, endpoint=False)
+        returns = np.array([np.sum(discounts[:T-t] * rewards[t:]) for t in range(T)])
+        return returns
+
+    def compute_advantage(self):
+        adv_n = copy.deepcopy(self.trajectory_adv)
+        max_length = max([len(adv) for adv in adv_n])
+
+        # pad
+        for i in range(len(adv_n)):
+            adv_n[i] = np.append(adv_n[i], np.zeros(max_length - len(adv_n[i])))
+
+        adv_n = np.array(adv_n)
+        adv_n = adv_n - adv_n.mean(axis=0)
+
+        # origin 
+        advs = [adv_n[i][:self.trajectory_adv[i].shape[0]] for i in range(len(adv_n))]
+        return advs
+
+    def compute_loss(self, m, t, D_TM, mask, action, G_t):
+        m = torch.from_numpy(m).to(self.device)
+        t = torch.from_numpy(t).to(self.device)
+        D_TM = torch.from_numpy(D_TM).to(self.device)
+        mask = torch.from_numpy(mask).to(self.device)
+        G_t = torch.tensor(G_t).to(self.device)
+        probs = self.model(m, t, D_TM, mask)
+        # probs = torch.log(probs)
+        # nll_loss
+        logp = -F.nll_loss(probs, torch.tensor([action]).to(self.device))
+        losses = -logp * G_t
+
+        self.logps.append(-logp.detach().cpu().numpy())
+        self.avg.append(G_t.detach().cpu().numpy())
+        
+        return losses
+    
+    def update_parameters(self):
+        # advantage
+        adv_n = self.compute_advantage()
+
+        if self.normalize_advantages:  
+            adv_s = []
+            for advantages in adv_n:
+                for advantage in advantages:
+                    adv_s.append(advantage)
+            adv_s = np.array(adv_s)
+            mean = adv_s.mean()
+            std = adv_s.std()
+        adv_n__ = [(advantages - mean) / (std + np.finfo(np.float32).eps) for advantages in adv_n]
+        adv_n = np.array(adv_n__)
+
+        # trajectorys   
+        loss_values = []
+        advantages__ = []
+        for ms, ts, ds, masks, aes, advs in zip(self.trajectory_m,
+                                        self.trajectory_t,
+                                        self.trajectory_d,
+                                        self.trajectory_mask,
+                                        self.trajectory_a, adv_n):
+            self.logps, self.avg = [], []
+            loss_by_trajectory = []
+            for m, t, d, mask, a, adv in zip(ms, ts, ds, masks, aes, advs):
+                # trajectory
+                loss = self.compute_loss(m, t, d, mask, a, adv)
+                loss_by_trajectory.append(loss)
+                loss_values.append(loss.detach().cpu().numpy())
+              
+            self.optimizer.zero_grad()
+            policy_gradient = torch.stack(loss_by_trajectory).mean()
+            policy_gradient.backward()
+            self.optimizer.step()
+
+        self.machine_list = []
+        self.task_list = []
+        self.D_TM_list = []
+        self.mask_list = []
+        self.action_list = []
+        self.reward_list = []
+        self.finishied_check = []
+
+        self.trajectory_m = []
+        self.trajectory_t = []
+        self.trajectory_d = []
+        self.trajectory_mask = []
+        self.trajectory_a = []
+        self.trajectory_adv = []
+
+        return np.mean(loss_values), 0
+
+class CloudMatrixModel2(nn.Module):
+    def __init__(self, **model_params):
+        super().__init__()
+        self.model_params = model_params
+
+        self.nT = self.model_params['nT']
+        self.nM = self.model_params['nM']
+
+        embedding_dim = self.model_params['embedding_dim']
+
+        # self.position_embedding
+        self.T_embedding = nn.Linear(self.nT, embedding_dim)
+        self.M_embedding = nn.Linear(self.nM, embedding_dim)
+        self.encoder = Matrix_Encoder(**model_params)
+        self.decoder = MMatrix_Decoder(**model_params)
+
+    def forward(self, machine_state, task_state, D_TM, ninf_mask):
+        # machine_state : [B, M, Feature]
+        # task_state : [B, T, Feature]
+        # D_TM : [B, T, M]
+        # ninf_mask : [B, M, T]
+
+        batch_size = machine_state.size(0)
+        # pomo_size = state.BATCH_IDX.size(1)
+        
+        # position embedding -> 일단은 linear로
+        row_emb = self.T_embedding(task_state)
+        col_emb = self.M_embedding(machine_state)
+
+        encoded_task, encoded_machine = self.encoder(row_emb, col_emb, D_TM)
+        # (B, T, embedding), (B, M, embedding)
+
+        probs = self.decoder(encoded_machine, encoded_task, ninf_mask)
+        # shape: (B, M*T)
+
+        return probs
+        
+
 class CloudMatrixModel(nn.Module):
     def __init__(self, **model_params):
         super().__init__()
@@ -50,7 +263,6 @@ class CloudMatrixModel(nn.Module):
 
         return task_selected, logpa
         
-
 class OneStageModel(nn.Module):
     def __init__(self, **model_params):
         super().__init__()
@@ -124,11 +336,15 @@ class Matrix_Encoder(nn.Module):
 class EncoderLayer(nn.Module):
     def __init__(self, **model_params):
         super().__init__()
-        if model_params['MHA'] == 'depth':
+        if model_params['TMHA'] == 'depth':
             self.row_encoding_block = EncodingBlock2(**model_params)
         else:
             self.row_encoding_block = EncodingBlock(**model_params)
-        self.col_encoding_block = EncodingBlock(**model_params)
+        
+        if model_params['MMHA'] == 'depth':
+            self.col_encoding_block = EncodingBlock2(**model_params)
+        else:
+            self.col_encoding_block = EncodingBlock(**model_params)
 
     def forward(self, row_emb, col_emb, cost_mat):
         # row_emb.shape: (B, T, embedding)
@@ -374,9 +590,9 @@ class MMatrix_Decoder(nn.Module):
         # shape: (B, embedding, T)
 
     def forward(self, encoded_machine, encoded_jobs, ninf_mask):
-        # encoded_machine.shape: (B, 1, embedding)
+        # encoded_machine.shape: (B, J, embedding)
         # encoded_jobs.shape: (B, T, embedding)
-        # ninf_mask.shape: (B, 1, T)
+        # ninf_mask.shape: (B, J, T)
         self.set_kv(encoded_jobs)
         task_num = encoded_jobs.size(1)
         machine_num = encoded_machine.size(1)
@@ -398,17 +614,19 @@ class MMatrix_Decoder(nn.Module):
         #  Single-Head Attention, for probability calculation
         #######################################################
         score = torch.matmul(mh_atten_out, self.single_head_key)
-        # shape: (B, 1, T+1)
+        # shape: (B, M, T)
 
 
         score_scaled = score / sqrt_embedding_dim
-        # shape: (B, 1, T+1)
+        # shape: (B, M, T)
 
         score_clipped = logit_clipping * torch.tanh(score_scaled)
 
         score_masked = score_clipped + ninf_mask
         score_masked = score_masked.reshape(-1, machine_num * task_num)
+        
         probs = F.softmax(score_masked, dim=1)
+        # probs = F.log_softmax(score_masked, dim=1)
         # shape: (B, M*T)
 
         return probs
