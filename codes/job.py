@@ -241,6 +241,114 @@ class Job(object):
                 t = task.finished_timestamp
         return t
 
+class Job2(object):
+    task_cls = Task
+
+    def __init__(self, env, job_config, sim,):
+        self.env = env
+        self.job_config = job_config
+        self.id = job_config.id
+
+        self.tasks_map = {}
+        for task_config in job_config.task_configs:
+            task_idx = copy.deepcopy(sim.task_num[0])
+            task_index = task_config.task_index
+            self.tasks_map[task_index] = Job2.task_cls(env, self, task_config)
+            
+            sim.full_tasks_map[task_idx] = id(self.tasks_map[task_index])
+            sim.task2idx[task_config.task_index] = task_idx
+            sim.task_full_feature = torch.cat([sim.task_full_feature, \
+                                      torch.tensor([[[task_config.cpu,
+                                                    task_config.memory,
+                                                    task_config.duration,
+                                                    task_config.instances_number,
+                                                    sim.task_num[0]]]], dtype=torch.float32)],dim=1)
+            sim.task_num[0] += 1
+
+    @property
+    def tasks(self):
+        return self.tasks_map.values()
+
+    @property
+    def unfinished_tasks(self):
+        ls = []
+        for task in self.tasks:
+            if not task.finished:
+                ls.append(task)
+        return ls
+
+    @property
+    def ready_unfinished_tasks(self):
+        ls = []
+        for task in self.tasks:
+            if not task.finished and task.ready:
+                ls.append(task)
+        return ls
+
+    @property
+    def tasks_which_has_waiting_instance(self):
+        ls = []
+        for task in self.tasks:
+            if task.has_waiting_task_instances:
+                ls.append(task)
+        return ls
+
+    @property
+    def ready_tasks_which_has_waiting_instance(self):
+        ls = []
+        for task in self.tasks:
+            if task.has_waiting_task_instances and task.ready:
+                ls.append(task)
+        return ls
+
+    @property
+    def running_tasks(self):
+        ls = []
+        for task in self.tasks:
+            if task.started and not task.finished:
+                ls.append(task)
+        return ls
+
+    @property
+    def finished_tasks(self):
+        ls = []
+        for task in self.tasks:
+            if task.finished:
+                ls.append(task)
+        return ls
+
+    @property
+    def started(self):
+        for task in self.tasks:
+            if task.started:
+                return True
+        return False
+
+    @property
+    def finished(self):
+        for task in self.tasks:
+            if not task.finished:
+                return False
+        return True
+
+    @property
+    def started_timestamp(self):
+        t = None
+        for task in self.tasks:
+            if task.started_timestamp is not None:
+                if (t is None) or (t > task.started_timestamp):
+                    t = task.started_timestamp
+        return t
+
+    @property
+    def finished_timestamp(self):
+        if not self.finished:
+            return None
+        t = None
+        for task in self.tasks:
+            if (t is None) or (t < task.finished_timestamp):
+                t = task.finished_timestamp
+        return t
 
 class TaskInstance(object):
     def __init__(self, env, task, task_instance_index, task_instance_config):

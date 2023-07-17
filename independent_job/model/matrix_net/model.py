@@ -11,7 +11,7 @@ import copy
 class BGC():
     def __init__(self, cfg):
         self.device = cfg.device
-        self.gamma = 1.0
+        self.gamma = 0.999
         self.model = CloudMatrixModel2(**cfg.model_params).to(self.device)
         self.optimizer = Optimizer(self.model.parameters(), **cfg.optimizer_params['optimizer'])
         self.scheduler = Scheduler(self.optimizer, **cfg.optimizer_params['scheduler'])
@@ -204,8 +204,8 @@ class CloudMatrixModel2(nn.Module):
         # pomo_size = state.BATCH_IDX.size(1)
         
         # position embedding -> 일단은 linear로
-        row_emb = self.T_embedding(task_state)
-        col_emb = self.M_embedding(machine_state)
+        row_emb = F.relu(self.T_embedding(task_state))
+        col_emb = F.relu(self.M_embedding(machine_state))
 
         encoded_task, encoded_machine = self.encoder(row_emb, col_emb, D_TM)
         # (B, T, embedding), (B, M, embedding)

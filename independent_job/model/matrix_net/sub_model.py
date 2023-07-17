@@ -51,12 +51,13 @@ class Depth_MultiHeadAttention(nn.Module):
         depth_init = model_params['depth__init']
         FC_init = model_params['FC_init']
 
-        Wq = torch.torch.distributions.Uniform(low=-depth_init, high=depth_init).sample((head_num, 2, depth_hidden_dim))
-        Wk = torch.torch.distributions.Uniform(low=-depth_init, high=depth_init).sample((head_num, 2, depth_hidden_dim))
-        Wv = torch.torch.distributions.Uniform(low=-depth_init, high=depth_init).sample((head_num, 2, depth_hidden_dim))
-        self.Wq = nn.Parameter(Wq)
-        self.Wk = nn.Parameter(Wk)
-        self.Wv = nn.Parameter(Wq)
+        Wqkv = torch.torch.distributions.Uniform(low=-depth_init, high=depth_init).sample((head_num, 2, depth_hidden_dim))
+        Bqkv = torch.torch.distributions.Uniform(low=-depth_init, high=depth_init).sample((head_num, depth_hidden_dim))
+        self.Wqkv = nn.Parameter(Wqkv)
+        self.Bqkv = nn.Parameter(Bqkv)
+        self.Wq = nn.Linear(depth_hidden_dim,depth_hidden_dim, bias=False)
+        self.Wk = nn.Linear(depth_hidden_dim,depth_hidden_dim, bias=False)
+        self.Wv = nn.Linear(depth_hidden_dim,depth_hidden_dim, bias=False)
         # shape: (head, 2, depth_hidden)
 
         FC_weight = torch.torch.distributions.Uniform(low=-FC_init, high=FC_init).sample((head_num, depth_hidden_dim, 1))
@@ -88,18 +89,21 @@ class Depth_MultiHeadAttention(nn.Module):
         # [B, H, T, M, 2]
         a_e_feature_transposed = a_e_feature.transpose(1,2)
         # [B, T, H, M, 2]
-        
-        depth_q = torch.matmul(a_e_feature_transposed, self.Wq)
-        depth_k = torch.matmul(a_e_feature_transposed, self.Wk)
-        depth_v = torch.matmul(a_e_feature_transposed, self.Wv)
+        depth_qkv = torch.matmul(a_e_feature_transposed, self.Wqkv)
+        depth_qkv = F.leaky_relu(depth_qkv + self.Bqkv[None, None, :, None, :])
+
+        depth_q = self.Wq(depth_qkv)
+        depth_k = self.Wk(depth_qkv)
+        depth_v = self.Wv(depth_qkv)
         # [B, T, H, M, depth_dim]
 
         depth_dot_product = torch.matmul(depth_q, depth_k.transpose(3, 4))
-        depth_dot_product = depth_dot_product / sqrt_qkv_dim
+        # depth_dot_product = depth_dot_product / sqrt_qkv_dim
         # [B ,T, H, M, M]
 
         depth_weights = nn.Softmax(dim=4)(depth_dot_product)
         ae_score = torch.matmul(depth_weights, depth_v)
+        ae_score = ae_score + depth_qkv
         # [B, T, H, M, depth_dim] 
 
         fc_out = torch.matmul(ae_score, self.FC_weight)
@@ -107,7 +111,7 @@ class Depth_MultiHeadAttention(nn.Module):
         depth_scores = fc_out.transpose(1,2)
         # [B, H, T, M, 1]
         depth_scores = depth_scores.squeeze(-1)
-        # [B, H, T, M]n 
+        # [B, H, T, M]
 
         weights = nn.Softmax(dim=3)(depth_scores)
         # [B, H, T, M]

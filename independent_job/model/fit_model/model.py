@@ -24,7 +24,6 @@ class Qnet(torch.nn.Module):
         for m in self.modules():
             if isinstance(m, torch.nn.Linear):
                 torch.nn.init.xavier_normal_(m.weight)
-                # torch.nn.init.xavier_normal_(m.bias, 0)
 
     def forward(self, x):
         x = self.feature_extract(x)
@@ -38,19 +37,18 @@ class Qnet(torch.nn.Module):
         return action.item()
 
 class Agent(object):
-    def __init__(self, Qnet, gamma, reward_to_go, 
+    def __init__(self, device, Qnet, gamma, reward_to_go, 
                  nn_baseline, normalize_advantages, 
                  model_save_path=None,
                  ):
         super().__init__()
-
+        self.device = device
         self.gamma = gamma
         self.reward_to_go = reward_to_go
         self.baseline = nn_baseline
         self.normalize_advantages = normalize_advantages
-        self.Qnet = Qnet
+        self.Qnet = Qnet.to(device)
         self.optimizer = torch.optim.Adam(self.Qnet.parameters() ,lr=0.001)
-
         self.model_save_path = model_save_path
 
     def save_parm(self):
@@ -84,16 +82,17 @@ class Agent(object):
 
 
     def _loss(self, state, action, G_t):
-        logits = self.Qnet(state)
+        logits = self.Qnet(state.to(self.device))
 
         # categorical
         # dist = torch.distributions.Categorical(logits=logits)
         # logp = dist.log_prob(torch.tensor(action))
-        logp = -F.nll_loss(F.softmax(logits), torch.tensor([action]))
+
+        logp = -F.nll_loss(F.softmax(logits), torch.tensor([action]).to(self.device))
         self.logps.append(-logp.detach().cpu().numpy())
         self.avg.append(G_t)
         
-        return -logp * G_t
+        return -logp * torch.tensor(G_t).to(self.device)
     
     def update_parameters(self, all_states, all_actions, all_rewards):
         # G_t
